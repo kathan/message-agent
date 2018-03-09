@@ -1,0 +1,81 @@
+{
+  "_args": [
+    [
+      "file-agent",
+      ""
+    ]
+  ],
+  "_from": "file-agent@latest",
+  "_id": "file-agent@0.2.3",
+  "_inCache": true,
+  "_installable": true,
+  "_location": "/file-agent",
+  "_nodeVersion": "5.10.0",
+  "_npmOperationalInternal": {
+    "host": "s3://npm-registry-packages",
+    "tmp": "tmp/file-agent-0.2.3.tgz_1502989884999_0.6781581442337483"
+  },
+  "_npmUser": {
+    "email": "darrelkathan@gmail.com",
+    "name": "kathan"
+  },
+  "_npmVersion": "3.8.3",
+  "_phantomChildren": {},
+  "_requested": {
+    "name": "file-agent",
+    "raw": "file-agent",
+    "rawSpec": "",
+    "scope": null,
+    "spec": "latest",
+    "type": "tag"
+  },
+  "_requiredBy": [
+    "#USER"
+  ],
+  "_shasum": "4f19ede7edaa575ff4e23aceb783abda3fbab453",
+  "_shrinkwrap": null,
+  "_spec": "file-agent",
+  "_where": "",
+  "bugs": {
+    "url": "https://github.com/kathan/file-agent/issues"
+  },
+  "dependencies": {
+    "async": "*",
+    "@kathan/send-file": "*",
+    "rimraf": "*"
+  },
+  "description": "A lightweight library written in node.js for file automation.",
+  "devDependencies": {},
+  "directories": {},
+  "dist": {
+    "shasum": "4f19ede7edaa575ff4e23aceb783abda3fbab453",
+    "tarball": "https://registry.npmjs.org/file-agent/-/file-agent-0.2.3.tgz"
+  },
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "gitHead": "bf37ae3c8f6e3e41019ae70de2103495b879d9f3",
+  "homepage": "https://github.com/kathan/file-agent",
+  "keywords": [
+    "file",
+    "automation",
+    "hot",
+    "folder"
+  ],
+  "main": "./index.js",
+  "maintainers": [
+    {
+      "email": "darrelkathan@gmail.com",
+      "name": "kathan"
+    }
+  ],
+  "name": "file-agent",
+  "optionalDependencies": {},
+  "readme": "README.md",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/kathan/file-agent.git"
+  },
+  "scripts": {},
+  "version": "0.2.4"
+}
