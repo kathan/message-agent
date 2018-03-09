@@ -1,17 +1,20 @@
 /*
-file-agent test
+message-agent test
 */
 const Async = require('async');
 const formidable = require('formidable');
 const express = require('express');
 const fs = require('fs');
 const app = express();
-const FileAgent = require('../index.js');
+const MessageAgent = require('../index.js');
 const path = require('path');
+const sendIt = require('@kathan/send-it');
 
-const port = 4536;
+const port = 8080;
 const agent_1_name = 'test-agent1';
 const agent_2_name = 'test-agent2';
+const agent_1_url = `http://localhost:${port}/${agent_1_name}`;
+const agent_2_url = `http://localhost:${port}/${agent_2_name}`;
 
 app.set("json spaces", 2);
 app.use((req, res, next)=>{
@@ -33,7 +36,8 @@ app.use((req, res, next)=>{
 
 Async.series([
   (next)=>{
-    app.listen(port, () => {
+    app.listen(port, (err) => {
+      if(err){console.error('Error opening port', port, err);return next(err);}
       console.log(`app listening on ${port}`);
       next();
     });
@@ -42,21 +46,27 @@ Async.series([
     /*
     Create an agent that will pass files to a second agent.
     */
-    var fa1 = FileAgent({app:app,
-                          dir: path.resolve(__dirname, 'fa'),
+    var fa1 = MessageAgent(app,
+                          {directory: path.resolve(__dirname, 'fa'),
                           name: agent_1_name,
+                          url: agent_1_url,
                           dest: `http://localhost:${port}/${agent_2_name}`});
     
     fa1.on('ready', (err)=>{
-      if(err){return next(err);}
+      if(err){console.error('Error running', agent_1_name, err);return next(err);}
       console.log(`Running agent ${agent_1_name}`);
       //==== Start the first agent ====
       fa1.start();
       next();
     });
     
-    fa1.on('file', (file, payload, done)=>{
-      payload.count++;
+    fa1.on('payload', (payload, done)=>{
+      //console.log('on payload', payload);
+      if(payload.data.count){
+        payload.data.count++;
+      }else{
+        payload.data.count = 0;
+      }
       console.log('payload1', payload);
       done(true);
     });
@@ -69,20 +79,26 @@ Async.series([
     /*
     Create a second agent that passes received files back to the first agent.
     */
-    var fa2 = FileAgent(app, path.resolve(__dirname, 'fa'), agent_2_name);
+    var fa2 = MessageAgent(app, 
+                          {directory: path.resolve(__dirname, 'fa'),
+                          name: agent_2_name,
+                          url: agent_2_url,
+                          dest: `http://localhost:${port}/${agent_1_name}`});
     
-    fa2.emit('ready', `http://localhost:${port}/${agent_1_name}`, (err)=>{
-      if(err){return next(err);}
+    fa2.on('ready', (err)=>{
+      if(err){console.error('Error running', agent_2_name, err);return next(err);}
       console.log(`Running agent ${agent_2_name}`);
+      sendIt(agent_1_url, [path.resolve(__dirname, 'test.file')], {test:'data'}, (err, result, reply)=>{
+      });
       //==== Start the second agent ====
       fa2.start();
       next();
     });
     
-    fa2.on('file', (file, payload, done)=>{
+    fa2.on('payload', (payload, done)=>{
       var result = true;
   		//==== Stop after 5 round trips ====
-      if(payload.count == 5){
+      if(payload.data.count == 5){
         fa2.stop();
         result = false;
       }
