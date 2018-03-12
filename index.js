@@ -91,7 +91,8 @@ const MessageAgent = function(app, options, callback){
 		}
 	}
   }
-  //log(`Creating agent ${name}`);
+  
+  log(`Create new agent at POST ${name} with "agent" parameter.`);
   app.post(url_obj.pathname, (req, res, next) => {
     //==== Handle POST requests ====
     log(`${self.name} received data.`);
@@ -140,6 +141,7 @@ const MessageAgent = function(app, options, callback){
     }
   });
   
+  log(`Get agent at ${url_obj.pathname}.`)
   app.get(url_obj.pathname, (req, res, next) => {
     //==== Handle GET requests ====
     self.getPayloads((err, payloads)=>{
@@ -149,7 +151,8 @@ const MessageAgent = function(app, options, callback){
   });
   
   /* Update script */
-  app.put(`${url_obj.pathname}`, (req, res, next)=>{
+  log(`Update agent at PUT ${url_obj.pathname}. Parameters [script]`);
+  app.put(url_obj.pathname, (req, res, next)=>{
     Async.forEachOf(
       (value, key, done)=>{
         switch(key){
@@ -166,12 +169,14 @@ const MessageAgent = function(app, options, callback){
     );
   });
   
+  log(`Start agent at PUT ${url_obj.pathname}.`);
   app.put(`${url_obj.pathname}/start`, (req, res, next)=>{
     res.json({message:`Starting ${self.name} request`});
     self.start();
     next();
   });
   
+  log(`Stop agent at PUT ${url_obj.pathname}.`);
   app.put(`${url_obj.pathname}/stop`, (req, res, next)=>{
     res.json({message:`Stopping ${self.name} request`});
     self.stop();
