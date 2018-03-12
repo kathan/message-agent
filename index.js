@@ -57,7 +57,7 @@ const MessageAgent = function(app, options, callback){
   options.dest ? dest = options.dest : null;
   var script;
   options.script ? script = self.setScript(options.script) : null;
-  var ip = os.networkInterfaces().en0[1].address;
+  var ip = getIp();
   var port = options.port || 8080;
   var url = options.url || `http://${ip}:${port}`;
   var url_obj = Url.parse(url);
@@ -79,7 +79,18 @@ const MessageAgent = function(app, options, callback){
   
   EventEmitter.call(this);
   var immediate;
-  
+  function getIp(){
+  	var intf = os.networkInterfaces();
+  	for(var i in intf){
+		var adds = intf[i];
+		for(var a in adds){
+			var add = adds[a];
+			if(!add.internal && add.family === 'IPv4'){
+				return add.address;
+			}
+		}
+	}
+  }
   //log(`Creating agent ${name}`);
   app.post(url_obj.pathname, (req, res, next) => {
     //==== Handle POST requests ====
