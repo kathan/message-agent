@@ -92,7 +92,7 @@ const MessageAgent = function(app, options, callback){
 	}
   }
   
-  log(`Create new agent at POST ${name} with "agent" parameter.`);
+  log(`Create new agent at POST ${url_obj.pathname} with "agent" parameter.`);
   app.post(url_obj.pathname, (req, res, next) => {
     //==== Handle POST requests ====
     log(`${self.name} received data.`);
