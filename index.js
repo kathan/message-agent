@@ -1,9 +1,9 @@
 /*******************************************
-* send-it
+* message-agent
 * Copyright (c) 2018, Darrel Kathan 
 * Licensed under the MIT license.
 *
-* A current version and some documentation is available at
+* A current version and documentation is available at
 *    https://github.com/kathan/message-agent
 *
 * @summary     message-agent
@@ -15,8 +15,9 @@
 *******************************************/
 
 const path = require('path');
+const { spawn } = require('child_process');
 const util = require('util');
-const fs = require('fs');
+const fs = require('fs-extra');
 const os = require('os');
 const Url = require('url');
 const crypto = require('crypto');
@@ -24,8 +25,6 @@ const EventEmitter = require('events').EventEmitter;
 
 const sendIt = require('@kathan/send-it');
 const Async = require('async');
-const rimraf = require('rimraf');
-const mkdirp = require('mkdirp');
 
 const FILE_DIR_NAME = 'files';
 
@@ -33,13 +32,7 @@ const MessageAgent = function(app, options, callback){
   if ( !(this instanceof MessageAgent) ){
     return new MessageAgent(app, options, callback);
   }
-  
   var self = this;
-  var hash;
-  var running = options.running || false;
-  
-  //var name = options.name;//required
-  //==== Getters ====
   Object.assign(this,
     {
       get name() {
@@ -50,20 +43,10 @@ const MessageAgent = function(app, options, callback){
       }
     }
   );
-  var directory = path.resolve(options.directory, this.name);//required
-  var in_dir = path.resolve(directory, 'in');
-  var err_dir = path.resolve(directory, 'errors');
-  var dest;
-  options.dest ? dest = options.dest : null;
-  var script;
-  options.script ? script = self.setScript(options.script) : null;
-  var ip = getIp();
-  var port = options.port || 8080;
-  var url = options.url || `http://${ip}:${port}`;
-  var url_obj = Url.parse(url);
   var log = options.log || function(){
     var d = new Date();
     const args = Array.from(arguments);
+    args.unshift(`"${name}"`);
     args.unshift(self.constructor.name);
     args.unshift(`${d}`);
     
@@ -76,6 +59,26 @@ const MessageAgent = function(app, options, callback){
     args.push(e.stack);
     log.apply(null, args);
   };
+  
+  var hash;
+  var running = false;
+  //log('running', running);
+  var name = options.name;//required
+  //==== Getters ====
+  
+  var directory = path.resolve(options.directory, this.name);//required
+  
+  var in_dir = path.resolve(directory, 'in');
+  var err_dir = path.resolve(directory, 'errors');
+  var destination = null;
+
+  var script = null;
+  var mode = 'applescript';
+  var ip = getIp();
+  var port = options.port || 8080;
+  var url = options.url || `http://${ip}:${port}`;
+  var url_obj = Url.parse(url);
+  
   
   EventEmitter.call(this);
   var immediate;
@@ -92,7 +95,7 @@ const MessageAgent = function(app, options, callback){
 	}
   }
   
-  log(`Create new agent at POST ${url_obj.pathname} with "agent" parameter.`);
+  log(`Upload payload at POST ${url_obj.pathname}.`);
   app.post(url_obj.pathname, (req, res, next) => {
     //==== Handle POST requests ====
     log(`${self.name} received data.`);
@@ -120,69 +123,119 @@ const MessageAgent = function(app, options, callback){
       storeData(files, req.body, (err, file_paths)=>{
         if(err){
           
-          if(err.code && err.code === 'ENOTEMPTY'){
-            res.status(409);
-            res.write(`This data already exists.`);
+          if(err.code && err.code === 'ENOTEMPTY' || err.code === 'EEXIST'){
+            res.sendStatus(409);
+            res.write(JSON.stringify({feedback:`This data already exists.`}));
           }else{
-            res.status(500);
-            error(err);
+            error(`${err}`);
+            res.sendStatus(500);
+            res.write(JSON.stringify({feedback:`${err}`}));
           }
           res.end();
           return next();
+        }else{
+          res.json({feedback:`Payload was saved.`});
+          //res.send();  
+          next();
         }
-        
-        res.send();  
-        next();
       });
     }else{
-      res.status(400);
+      log('No file attached');
+      res.sendStatus(400);
       res.end();
       next();
     }
   });
   
-  log(`Get agent at ${url_obj.pathname}.`)
+  log(`Get agent at ${url_obj.pathname}.`);
   app.get(url_obj.pathname, (req, res, next) => {
     //==== Handle GET requests ====
+    log(`Received GET at ${url_obj.pathname}.`);
     self.getPayloads((err, payloads)=>{
+      if(err){return res.status(500).send(err);}
+      log(`Found payloads.`);
       res.json({agent: self.toJSON(), payloads:payloads});
       next();
     });
   });
   
   /* Update script */
-  log(`Update agent at PUT ${url_obj.pathname}. Parameters [script]`);
+  log(`Update agent at PUT ${url_obj.pathname}. Parameters [script, destination]`);
   app.put(url_obj.pathname, (req, res, next)=>{
-    Async.forEachOf(
+    var messages = [];
+    log(`Updating ${url_obj.pathname}`, req.body);
+    Async.forEachOf(req.body,
       (value, key, done)=>{
+        log(`Updating ${key}`, value);
         switch(key){
-          case 'script':
-            self.setScript(req.body.script, (err)=>{
-              done(err);
-            });
+          case 'mode':
+            self.setMode(req.body.mode);  
+            messages.push(`Updated ${key}`);
+            done();
             break;
+          case 'script':
+            self.setScript(req.body.script);  
+            messages.push(`Updated ${key}`);
+            done();
+            break;
+          case 'destination':
+            self.setDest(req.body.destination);
+            messages.push(`Updated ${key}`);
+            done();
+            break;
+          default:
+            done();
         }
       },
       (err)=>{
+        if(err){
+          next();
+          return res.send(err);
+        }
+        res.send({feedback: messages});
         next();
       }
     );
   });
   
-  log(`Start agent at PUT ${url_obj.pathname}.`);
+  log(`Start agent at PUT ${url_obj.pathname}/start.`);
   app.put(`${url_obj.pathname}/start`, (req, res, next)=>{
-    res.json({message:`Starting ${self.name} request`});
+    res.json({feedback:[`Starting "${self.name}" agent.`]});
     self.start();
     next();
   });
   
-  log(`Stop agent at PUT ${url_obj.pathname}.`);
+  log(`Stop agent at PUT ${url_obj.pathname}/stop.`);
   app.put(`${url_obj.pathname}/stop`, (req, res, next)=>{
-    res.json({message:`Stopping ${self.name} request`});
+    res.json({feedback:[`Stopping "${self.name}" agent.`]});
     self.stop();
     next();
   });
-
+  
+  /*log(`Remove payload at DELETE ${url_obj.pathname}/[hash].`);
+  app.delete(`${url_obj.pathname}`, (req, res, next)=>{
+    res.json({feedback:[`Deleting "${self.name}".`]});
+    self.stop();
+    next();
+  });*/
+  
+  this.setScript = function(scrpt){
+    script = scrpt;
+  };
+  
+  this.setMode = function(md){
+    mode = md;
+  };
+  
+  this.setDest = function(dst){
+    return this.setDestination(dst);
+  };
+  
+  this.setDestination = function(dst){
+    log(`updating destination from ${destination} to ${dst}`);
+    destination = dst;
+  };
+  
   this.stop = function(){
     if(running){
       log('Stopping', self.name);
@@ -201,7 +254,7 @@ const MessageAgent = function(app, options, callback){
   
   this.getPayloads = function (cb){
     fs.readdir(in_dir, (err, payload_dirs)=>{
-      //if(err){error(err);return cb(err);}
+      if(err){error(err);return cb(err);}
       var result = [];
       Async.forEach(payload_dirs, (payload_dir, next)=>{
         fs.stat(path.resolve(in_dir, payload_dir),(err, stat)=>{
@@ -220,28 +273,39 @@ const MessageAgent = function(app, options, callback){
         });
       },(err)=>{
         if(err){return cb(err);}
-        //log('result', result);
+        
         cb(null, result);
       });
     });
   };
   
   this.toJSON = function(){
+    //log('calling', name, 'this.toJSON');
     return {
       name:self.name,
-      url: url,
+      url: Url.format(url),
       directory: directory,
-      running:running
+      destination: destination,
+      running:running,
+      script: script,
+      mode: mode
     };
   };
   
   //==== Private Functions ====
   
+  function executeScript(payload, cb){
+    var handler = require(`./lib/${mode}.js`);
+    log('executing script');
+    handler(script, payload, cb);
+  }
+  
   function processNextFile(cb){
     self.getPayloads((err, payloads)=>{
+      if(err){cb(err);}
       if(payloads.length > 0){
         //=== Process the first file ====
-        log(self.name, 'Processing payloads:', payloads[0]);
+        log('Processing payloads:', payloads[0]);
         //log('processNextFile payloads[0]', payloads[0]);
         handlePayload(payloads[0], (err)=>{
           if(err){return cb(err);}
@@ -265,13 +329,44 @@ const MessageAgent = function(app, options, callback){
     }
   }
   
+  function mv(source, dest, cb){
+    fs.remove(dest,(err)=>{
+      log('Moving', `"${source}"`, 'to', `"${dest}"`);
+      var opts = ['-f', source, dest];
+      const ls = spawn('mv', opts);
+      var reply,error;
+      var result = false;
+      ls.stdout.on('data', (data) => {
+        reply = data;
+        //log('stdout:', $`{data}`);
+      });
+    
+      ls.stderr.on('data', (data) => {
+        error = data;
+        //log('stderr:', `${data}`);
+        //console.log(`stderr: ${data}`);
+      });
+    
+      ls.on('close', (code) => {
+        //log('mv result', 'code=', code, 'reply=', `${reply}`, 'error=', `${error}`);
+        if(code === 0){
+          result = true;
+        }
+        cb(error, reply, result);
+      });
+    });
+  }
+  
   function storeData(files, data, cb){
     var file_data = [];
     var new_paths = [];
-    var tmp_dir = path.resolve(os.tmpdir(), 'fa', self.name);
+    var tmp_dir = path.resolve(__dirname, '.tmp', self.name);
+    //var tmp_dir = path.resolve(os.tmpdir(), 'fa', self.name);
     //==== Put file buffers into an array ====
+    //log('files', files);
+    //log('data', data);
     for(var i in files){
-      file_data.push(files[i].data);
+      file_data.push(fs.readFileSync(files[i].path));
     }
     //==== Create "hash" folder based on sha256 hash of file ====
     var file_hash = getHash(file_data, data);
@@ -283,14 +378,14 @@ const MessageAgent = function(app, options, callback){
     //==== Create new paths for each file ====
     for(i in files){
       files[i].new_path = path.resolve(temp_file_dir, files[i].name);
-      new_paths.push(path.resolve(dest_file_dir, files[i].name));
+      //new_paths.push(path.resolve(dest_file_dir, files[i].name));
     }
     
     var data_file = path.resolve(temp_hash_dir, 'data.json');
     Async.series([
       (next)=>{
         //==== Create temp directory ====
-        mkdirp(temp_file_dir, (err)=>{
+        fs.ensureDir(temp_file_dir, (err)=>{
           if(err){return next(`mkdirp dest_file_dir: ${err}`);}
           next();
         });
@@ -302,18 +397,20 @@ const MessageAgent = function(app, options, callback){
           if(err){return next(`writeFile: ${err}`);}
           Async.forEach(files,
             (file, file_next)=>{
-              
+              //log('file', file);
               //==== Move file to "files" folder ====
-              fs.rename(file.path, file.new_path , (err)=>{
+              
+              mv(file.path, file.new_path, (err)=>{
                 if(err){return file_next(err);}
+                //log(`Moved ${file.path}=>${file.new_path}`);
                 file_next();
               });
             },
             (err)=>{
               if(err){return next(err);}
-              fs.rename(temp_hash_dir, dest_hash_dir, (err) => {
-                if(err){return next(err);}
-                log(self.name, 'Stored', dest_hash_dir);
+              mv(temp_hash_dir, dest_hash_dir, (err) => {
+                if(err){return next(`${err} ${temp_hash_dir}=>${in_dir}`);}
+                log('Stored', dest_hash_dir);
                 next();
               });
             }
@@ -322,7 +419,7 @@ const MessageAgent = function(app, options, callback){
       }],
       (err)=>{
         if(err){
-          error(err);
+          error(`${err}`);
           cb(err);
         }
         cb(null, new_paths);
@@ -358,6 +455,7 @@ const MessageAgent = function(app, options, callback){
               Async.forEach(actual_files, (actual_file, next_actual)=>{
                 var actual_path = path.resolve(in_dir, hash, file, actual_file);
                 stats.path = actual_path;
+                stats.filename = path.basename(stats.path);
                 file_obj.files.push(stats);
                 next_actual();
               },(err)=>{
@@ -365,6 +463,8 @@ const MessageAgent = function(app, options, callback){
                 next_file();
               });
             });
+          }else{
+            next_file();
           }
         });
       },(err)=>{
@@ -393,37 +493,37 @@ const MessageAgent = function(app, options, callback){
     
     //==== Execute user script ====
     //log('payload', payload);
-    self.emit('payload', payload, (result)=>{
+    executeScript(payload, (err, reply, result)=>{
       var payload_dir = path.resolve(in_dir, payload.hash);
-      var hash = path.basename(payload_dir);
-      var dest_err_dir = path.resolve(err_dir, hash);
+      var dest_err_dir = path.resolve(err_dir, payload.hash);
       //==== Send file to next agent ====
-      log(self.name, 'User script replied', result);
+      log('User script replied', result);
       if(result){
-        if(!dest){
+        if(!destination){
           var msg = 'No destination';
-          log(self.name, msg);
+          log(msg);
           return cb(msg);
         }
         
         var start_time = Date.now();
-        
+        //log('payload', payload);
         var files = payload.files.map((file)=>{
           return file.path;
         });
-        log(self.name, 'Sending', files, 'to', dest);
+        log('Sending', payload.files, 'to', destination);
         
-        sendIt(dest, files, payload.data, (err, result, reply)=>{
-          log(self.name, 'Result is', result, 'for', files);
-          if(err){error(err);}
+        sendIt(destination, files, payload.data, (err, result, reply)=>{
+          
+          //log('Result is', result, 'for', files);
+          if(err){error(`${err}`);}
           var end_time = Date.now();
-          log(self.name, `agent.sendFile result`, result, (end_time-start_time), 'ms');
+          log(`agent.sendFile result`, result, (end_time-start_time), 'ms');
           //log(`${self.name} sendFile reply`, reply);
           if(result){
-            log(self.name, 'Success sending', files, 'to', dest);
+            log('Success sending', files, 'to', destination);
             //console.log('files', files);
             
-            rimraf(payload_dir, (err)=>{
+            fs.remove(payload_dir, (err)=>{
               if(err){error(err);}
               //log(`Removed ${hash_dir}`);
               cb(true);
@@ -436,15 +536,25 @@ const MessageAgent = function(app, options, callback){
       }else{
         //==== Send to error folder ====
         
-        //fs.rename(payload_dir, dest_err_dir, (err) => {
-          //error(err);
+        mv(payload_dir, dest_err_dir, (err) => {
+          if(err){error(`${err}`, payload_dir, dest_err_dir);}
           cb(false);
-        //});
+        });
       }
     });
   }
-  
-  mkdirp(in_dir, (err)=>{
+  options.destination ? this.setDestination(options.destination) : null;
+  options.script ? this.setScript(options.script) : null;
+  options.mode ? this.setMode(options.mode) : null;
+  //log('options.running', options.running);
+  //log('running before', running);
+  if(options.running){
+    this.start();
+  }else{
+    this.stop();
+  }
+  //log('running after', running);
+  fs.ensureDir(in_dir, (err)=>{
     if(err){
       if(typeof callback === 'function'){
         callback(`mkdirp in_dir: ${err}`);
@@ -455,13 +565,14 @@ const MessageAgent = function(app, options, callback){
     }
     
     //==== Create folder inside "in" folder called "errors" ====
-    fs.mkdir(err_dir, (err)=>{
-      if(err){
+    fs.ensureDir(err_dir, (err)=>{
+      if(err && err.code !== 'EEXIST'){
         if(typeof callback === 'function'){
           callback(err);
         }else{
           self.emit('error', err);
         }
+        return;
       }
       
       if(typeof callback === 'function'){
