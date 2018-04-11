@@ -1,6 +1,6 @@
 {
   "name": "message-agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A library written in node.js for data and file automation over http.",
   "license": "MIT",
   "homepage": "https://github.com/kathan/message-agent/",
