@@ -30,7 +30,8 @@
   ],
   "dependencies": {
     "async": "*",
-    "@kathan/send-it": "*"
+    "@kathan/send-it": "*",
+    "fs-extra": "*"
   },
   "bugs": {
     "url": "https://github.com/kathan/message-agent/issues"
