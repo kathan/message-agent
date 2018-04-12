@@ -17,12 +17,12 @@
 const path = require('path');
 const { spawn } = require('child_process');
 const util = require('util');
-const fs = require('fs-extra');
 const os = require('os');
 const Url = require('url');
 const crypto = require('crypto');
 const EventEmitter = require('events').EventEmitter;
 
+const fs = require('fs-extra');
 const sendIt = require('@kathan/send-it');
 const Async = require('async');
 
